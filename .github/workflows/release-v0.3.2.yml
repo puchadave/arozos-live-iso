@@ -1,0 +1,46 @@
+name: Release v0.3.2
+
+on:
+  push:
+    branches:
+      - release/v0.3.2
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Static architecture tests
+        run: sh tests/run.sh
+
+      - name: Build ISO in Alpine 3.24
+        run: |
+          docker run --rm --privileged \
+            -v "$PWD:/work" \
+            -w /work \
+            alpine:3.24 \
+            sh -lc 'apk add --no-cache bash && bash scripts/build-live-iso.sh'
+
+      - name: Create checksums
+        run: |
+          cd output
+          sha256sum arozos-alpine-live-v0.3.2-x86_64.iso > SHA256SUMS
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.3.2
+        run: |
+          gh release create "$TAG" \
+            output/arozos-alpine-live-v0.3.2-x86_64.iso \
+            output/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ArozOS Alpine Live ISO v0.3.2" \
+            --notes "ArozOS Alpine Live ISO v0.3.2. Alpine 3.24 x86_64, ArozOS web assets integrated into the SquashFS root at build time, writable OverlayFS runtime, DHCP via BusyBox udhcpc, and curated APK manifests/gateway tooling."
