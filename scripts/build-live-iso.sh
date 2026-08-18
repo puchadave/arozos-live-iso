@@ -39,7 +39,9 @@ popd >/dev/null
 
 echo "==> Creating minimal Alpine root filesystem"
 mapfile -t CORE_PKGS < <(grep -Ev '^($|#)' requirements/core.txt)
-apk --root "$ROOTFS" --arch "$ARCH" --initdb --repositories-file "$REPOFILE" add "${CORE_PKGS[@]}"
+mkdir -p "$ROOTFS/etc/apk/keys"
+cp /etc/apk/keys/* "$ROOTFS/etc/apk/keys/"
+apk --root "$ROOTFS" --arch "$ARCH" --initdb --keys-dir /etc/apk/keys --repositories-file "$REPOFILE" add "${CORE_PKGS[@]}"
 cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 printf 'arozos-live\n' > "$ROOTFS/etc/hostname"
 mkdir -p "$ROOTFS/opt/arozos" "$ROOTFS/opt/arozos/files" "$ROOTFS/opt/arozos/tmp"

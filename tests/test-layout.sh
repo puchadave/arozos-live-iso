@@ -8,6 +8,7 @@ for required in alpine-base bash ca-certificates ffmpeg iproute2 procps util-lin
 grep -q 'make web' scripts/build-live-iso.sh || fail "ArozOS web build missing"
 grep -q 'dist/web.tar.gz' scripts/build-live-iso.sh || fail "web.tar.gz extraction source missing"
 grep -q 'mksquashfs' scripts/build-live-iso.sh || fail "SquashFS build missing"
+grep -q -- '--keys-dir /etc/apk/keys' scripts/build-live-iso.sh || fail "rootfs apk must trust Alpine build keys"
 ! grep -Eq 'cp .*web\.tar\.gz.*ROOTFS|install .*web\.tar\.gz.*ROOTFS' scripts/build-live-iso.sh || fail "web.tar.gz must not be copied into runtime rootfs"
 grep -q 'mount -t squashfs' initramfs/arozos-live-init || fail "initramfs must mount SquashFS"
 grep -q 'mount -t overlay' initramfs/arozos-live-init || fail "initramfs must mount writable overlay"
