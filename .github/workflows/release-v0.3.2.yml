@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
@@ -19,15 +20,20 @@ jobs:
       - name: Static architecture tests
         run: sh tests/run.sh
 
-      - name: Build ISO in Alpine 3.24
+      - name: Download verified ISO artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: 9326498551
         run: |
-          docker run --rm --privileged \
-            -v "$PWD:/work" \
-            -w /work \
-            alpine:3.24 \
-            sh -lc 'apk add --no-cache bash && bash scripts/build-live-iso.sh'
+          mkdir -p output
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+            > /tmp/arozos-live-iso.zip
+          unzip -j /tmp/arozos-live-iso.zip -d output
+          test -f output/arozos-alpine-live-v0.3.2-x86_64.iso
 
-      - name: Create checksums
+      - name: Create fresh checksum
         run: |
           cd output
           sha256sum arozos-alpine-live-v0.3.2-x86_64.iso > SHA256SUMS
@@ -37,10 +43,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: v0.3.2
         run: |
-          gh release create "$TAG" \
-            output/arozos-alpine-live-v0.3.2-x86_64.iso \
-            output/SHA256SUMS \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "ArozOS Alpine Live ISO v0.3.2" \
-            --notes "ArozOS Alpine Live ISO v0.3.2. Alpine 3.24 x86_64, ArozOS web assets integrated into the SquashFS root at build time, writable OverlayFS runtime, DHCP via BusyBox udhcpc, and curated APK manifests/gateway tooling."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              output/arozos-alpine-live-v0.3.2-x86_64.iso \
+              output/SHA256SUMS \
+              --clobber \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" \
+              output/arozos-alpine-live-v0.3.2-x86_64.iso \
+              output/SHA256SUMS \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "ArozOS Alpine Live ISO v0.3.2" \
+              --notes "ArozOS Alpine Live ISO v0.3.2. Alpine 3.24 x86_64, ArozOS web assets integrated into the SquashFS root at build time, writable OverlayFS runtime, DHCP via BusyBox udhcpc, and curated APK manifests/gateway tooling."
+          fi
