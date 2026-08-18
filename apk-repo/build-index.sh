@@ -16,7 +16,10 @@ cat "$BASE/requirements/core.txt" "$BASE/requirements/installer.txt" "$BASE/requ
 mkdir -p "$TMP/apks"
 apk fetch --repositories-file "$REPOS" --recursive --output "$TMP/apks" $(cat "$TMP/requirements.txt")
 apk index -o "$OUT/APKINDEX.tar.gz" "$TMP"/apks/*.apk
-find "$TMP/apks" -type f -name '*.apk' -printf '%f\n' | sort > "$OUT/packages.list"
+for apkfile in "$TMP"/apks/*.apk; do
+  [ -f "$apkfile" ] || continue
+  basename "$apkfile"
+done | sort > "$OUT/packages.list"
 cp "$TMP/requirements.txt" "$OUT/requirements.txt"
 if [ -n "${APK_SIGNING_KEY:-}" ]; then
   abuild-sign -k "$APK_SIGNING_KEY" "$OUT/APKINDEX.tar.gz"

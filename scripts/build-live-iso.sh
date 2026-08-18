@@ -63,7 +63,12 @@ ln -sf /etc/init.d/arozos "$ROOTFS/etc/runlevels/default/arozos"
 echo "==> Building SquashFS root (not a RAM disk)"
 mksquashfs "$ROOTFS" "$ISOROOT/images/rootfs.squashfs" -comp xz -b 1M -noappend
 
-KVER=$(find "$ROOTFS/lib/modules" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | head -n1)
+KVER=""
+for moddir in "$ROOTFS"/lib/modules/*; do
+    [ -d "$moddir" ] || continue
+    KVER=${moddir##*/}
+    break
+done
 [ -n "$KVER" ]
 cp -L "$ROOTFS/boot/vmlinuz-lts" "$ISOROOT/boot/vmlinuz-lts"
 
