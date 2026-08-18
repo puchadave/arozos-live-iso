@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+name="ArozOS"
+description="ArozOS Cloud / Web Desktop"
+command="/opt/arozos/arozos"
+command_args="${AROZOS_OPTS}"
+command_user="arozos:arozos"
+directory="/opt/arozos"
+command_background="yes"
+pidfile="/run/${RC_SVCNAME}.pid"
+
+depend() {
+    need arozos-net
+    after firewall
+}

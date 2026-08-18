@@ -1,0 +1,17 @@
+bash
+ca-certificates
+git
+go
+make
+tar
+curl
+wget
+squashfs-tools
+xorriso
+mtools
+grub
+grub-efi
+mkinitfs
+kmod
+cpio
+xz

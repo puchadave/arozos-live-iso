@@ -1,0 +1,13 @@
+alpine-base
+bash
+ca-certificates
+ffmpeg
+net-tools
+iproute2
+procps
+util-linux
+coreutils
+findutils
+tzdata
+shadow
+linux-lts

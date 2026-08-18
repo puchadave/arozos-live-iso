@@ -1,0 +1,48 @@
+#!/bin/sh
+set -eu
+BB=/bin/busybox
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sysfs /sys
+$BB mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+$BB mkdir -p /run /media/iso /lower /cow /newroot
+$BB mount -t tmpfs tmpfs /run
+
+for mod in loop squashfs overlay iso9660 sr_mod sd_mod ahci virtio_pci virtio_blk virtio_scsi nvme usb_storage xhci_pci; do
+    $BB modprobe "$mod" 2>/dev/null || true
+done
+$BB mdev -s
+
+ISO_DEV=""
+for dev in /dev/sr* /dev/sd* /dev/vd* /dev/nvme*n*p*; do
+    [ -b "$dev" ] || continue
+    if $BB mount -o ro "$dev" /media/iso 2>/dev/null; then
+        if [ -f /media/iso/images/rootfs.squashfs ]; then
+            ISO_DEV="$dev"
+            break
+        fi
+        $BB umount /media/iso 2>/dev/null || true
+    fi
+done
+
+if [ -z "$ISO_DEV" ]; then
+    echo "ArozOS Live: unable to locate ISO containing images/rootfs.squashfs" >&2
+    exec $BB sh
+fi
+
+$BB mount -t squashfs -o loop,ro /media/iso/images/rootfs.squashfs /lower
+$BB mount -t tmpfs -o mode=0755 tmpfs /cow
+$BB mkdir -p /cow/upper /cow/work
+$BB mount -t overlay overlay -o lowerdir=/lower,upperdir=/cow/upper,workdir=/cow/work /newroot
+
+$BB mkdir -p /newroot/run/arozos-live/lower /newroot/run/arozos-live/cow /newroot/media/cdrom /newroot/dev /newroot/proc /newroot/sys
+$BB mount -o move /lower /newroot/run/arozos-live/lower
+$BB mount -o move /cow /newroot/run/arozos-live/cow
+$BB mount -o move /media/iso /newroot/media/cdrom
+$BB mount -o move /dev /newroot/dev
+$BB mount -o move /proc /newroot/proc
+$BB mount -o move /sys /newroot/sys
+
+exec $BB switch_root /newroot /sbin/init

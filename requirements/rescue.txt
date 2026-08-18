@@ -1,0 +1,17 @@
+ddrescue
+testdisk
+gparted
+smartmontools
+nvme-cli
+mdadm
+lvm2
+cryptsetup
+btrfs-progs
+xfsprogs
+ntfs-3g
+exfatprogs
+rsync
+rclone
+pciutils
+usbutils
+sg3_utils

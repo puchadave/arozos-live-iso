@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+name="ArozOS live DHCP"
+description="Bring up the first usable Ethernet interface with udhcpc"
+
+start() {
+    ebegin "Configuring live network"
+    local p iface
+    for p in /sys/class/net/*; do
+        [ -e "$p" ] || continue
+        iface=${p##*/}
+        [ "$iface" = "lo" ] && continue
+        ip link set dev "$iface" up 2>/dev/null || continue
+        if udhcpc -i "$iface" -q -n -t 5 >/dev/null 2>&1; then
+            printf '%s\n' "$iface" > /run/arozos-live-iface
+            eend 0
+            return 0
+        fi
+    done
+    eend 1 "no DHCP lease; ArozOS remains available on console"
+    return 0
+}

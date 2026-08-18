@@ -1,0 +1,13 @@
+kernel/fs/squashfs/*
+kernel/fs/overlayfs/*
+kernel/drivers/block/loop.ko*
+kernel/fs/isofs/*
+kernel/drivers/scsi/sr_mod.ko*
+kernel/drivers/scsi/sd_mod.ko*
+kernel/drivers/ata/*
+kernel/drivers/virtio/*
+kernel/drivers/block/virtio_blk.ko*
+kernel/drivers/scsi/virtio_scsi.ko*
+kernel/drivers/nvme/*
+kernel/drivers/usb/storage/*
+kernel/drivers/usb/host/*

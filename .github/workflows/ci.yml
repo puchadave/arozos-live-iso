@@ -1,18 +1,19 @@
 name: ArozOS Alpine Live ISO
-
 on:
   push:
   pull_request:
   workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Static architecture tests
         run: sh tests/run.sh
-
+      - name: Gateway compile test
+        working-directory: gateway
+        run: go test ./...
   build:
     needs: test
     runs-on: ubuntu-latest
@@ -20,10 +21,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build ISO in Alpine 3.24
         run: |
-          docker run --rm \
-            -v "$PWD:/work" \
-            -w /work \
-            alpine:3.24 \
+          docker run --rm --privileged \
+            -v "$PWD:/work" -w /work alpine:3.24 \
             sh -lc 'apk add --no-cache bash && bash scripts/build-live-iso.sh'
       - uses: actions/upload-artifact@v4
         with:

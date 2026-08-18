@@ -1,0 +1,12 @@
+parted
+gptfdisk
+grub
+grub-efi
+efibootmgr
+dosfstools
+e2fsprogs
+btrfs-progs
+xfsprogs
+mdadm
+cryptsetup
+lvm2
