@@ -10,6 +10,7 @@ squashfs-tools
 xorriso
 mtools
 grub
+grub-bios
 grub-efi
 mkinitfs
 kmod
