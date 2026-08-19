@@ -1,0 +1,34 @@
+#!ipxe
+
+isset ${net0/ip} || dhcp || goto shell
+set server ${next-server}
+isset ${server} || goto shell
+set base http://${server}:8081
+
+menu ArozOS PXE Server Edition
+item --gap -- ---------------- ${buildarch} / ${platform} ----------------
+item live       ArozOS Live
+item rescue     ArozOS Rescue
+item installer  ArozOS Installer
+item debug      ArozOS Live debug
+item shell      iPXE shell
+choose --default live --timeout 8000 selected || goto shell
+goto ${selected}
+
+:live
+chain ${base}/menus/live-${buildarch}.ipxe || goto shell
+
+:rescue
+chain ${base}/menus/rescue-${buildarch}.ipxe || goto shell
+
+:installer
+chain ${base}/menus/installer-${buildarch}.ipxe || goto shell
+
+:debug
+chain ${base}/menus/debug-${buildarch}.ipxe || goto shell
+
+:shell
+echo PXE-SE automatic boot stopped.
+echo Server: ${server}
+echo Architecture: ${buildarch}
+shell
