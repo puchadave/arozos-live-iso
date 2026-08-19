@@ -107,7 +107,8 @@ for executable in \
     "$ROOTFS/etc/init.d/arozos-net" \
     "$ROOTFS/etc/init.d/arozos-mode" \
     "$ROOTFS/etc/init.d/arozos-pxe-se" \
-    "$ROOTFS/usr/local/sbin/arozos-mode-init"; do
+    "$ROOTFS/usr/local/sbin/arozos-mode-init" \
+    "$ROOTFS/usr/local/sbin/arozos-console"; do
     [ -f "$executable" ] && chmod 0755 "$executable"
 done
 
