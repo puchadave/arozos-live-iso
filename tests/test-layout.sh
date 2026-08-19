@@ -1,10 +1,12 @@
 #!/bin/sh
 set -eu
 fail() { echo "FAIL: $*" >&2; exit 1; }
-[ "$(cat VERSION)" = "0.3.2" ] || fail "VERSION must be 0.3.2"
+[ "$(cat VERSION)" = "0.3.3" ] || fail "VERSION must be 0.3.3"
 for f in requirements/core.txt requirements/build.txt requirements/installer.txt requirements/rescue.txt scripts/build-live-iso.sh initramfs/arozos-live-init rootfs/etc/init.d/arozos rootfs/etc/init.d/arozos-net apk-repo/build-index.sh gateway/main.go; do [ -f "$f" ] || fail "missing $f"; done
 for forbidden in go git make gcc build-base gparted testdisk ddrescue mdadm lvm2 cryptsetup grub; do ! grep -Eq "^${forbidden}([<>=~].*)?$" requirements/core.txt || fail "$forbidden must not be in core"; done
 for required in alpine-base bash ca-certificates ffmpeg iproute2 procps util-linux coreutils findutils tzdata shadow linux-lts; do grep -Eq "^${required}([<>=~].*)?$" requirements/core.txt || fail "missing core package $required"; done
+grep -q '^grub-bios$' requirements/build.txt || fail "grub-bios build package required for Legacy BIOS boot"
+grep -q '^grub-efi$' requirements/build.txt || fail "grub-efi build package required for UEFI boot"
 grep -q 'make web' scripts/build-live-iso.sh || fail "ArozOS web build missing"
 grep -q 'dist/web.tar.gz' scripts/build-live-iso.sh || fail "web.tar.gz extraction source missing"
 grep -q 'mksquashfs' scripts/build-live-iso.sh || fail "SquashFS build missing"
@@ -13,6 +15,14 @@ grep -q -- '--keys-dir /etc/apk/keys' scripts/build-live-iso.sh || fail "rootfs 
 ! grep -Eq 'cp .*web\.tar\.gz.*ROOTFS|install .*web\.tar\.gz.*ROOTFS' scripts/build-live-iso.sh || fail "web.tar.gz must not be copied into runtime rootfs"
 grep -q 'mount -t squashfs' initramfs/arozos-live-init || fail "initramfs must mount SquashFS"
 grep -q 'mount -t overlay' initramfs/arozos-live-init || fail "initramfs must mount writable overlay"
+install_line=$(grep -n -- '--install -s' initramfs/arozos-live-init | head -n1 | cut -d: -f1 || true)
+mdev_line=$(grep -n 'mdev -s' initramfs/arozos-live-init | head -n1 | cut -d: -f1 || true)
+[ -n "$install_line" ] || fail "initramfs must install BusyBox applet symlinks"
+[ -n "$mdev_line" ] || fail "initramfs mdev scan missing"
+[ "$install_line" -lt "$mdev_line" ] || fail "BusyBox applets must be installed before mdev helpers run"
+grep -q -- '-report_el_torito' scripts/build-live-iso.sh || fail "ISO build must verify El Torito boot entries"
+grep -q 'BIOS' scripts/build-live-iso.sh || fail "ISO build must verify Legacy BIOS boot entry"
+grep -q 'UEFI' scripts/build-live-iso.sh || fail "ISO build must verify UEFI boot entry"
 grep -q 'udhcpc' rootfs/etc/init.d/arozos-net || fail "live DHCP service missing"
 grep -q 'package payloads intentionally discarded' apk-repo/build-index.sh || fail "curated repo must be metadata-only"
-echo "PASS: live ISO layout policy"
+echo "PASS: live ISO layout and dual-boot policy"
