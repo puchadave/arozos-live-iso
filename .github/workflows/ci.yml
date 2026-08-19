@@ -1,8 +1,10 @@
-name: ArozOS Alpine Live ISO
+name: ArozOS Bare-Metal Image Set
+
 on:
   push:
   pull_request:
   workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,17 +18,70 @@ jobs:
       - name: Gateway compile test
         working-directory: gateway
         run: go test ./...
-  build:
+
+  build-x86_64:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Build ISO in Alpine 3.24
+
+      - name: Build complete x86_64 image set in Alpine 3.24
         run: |
           docker run --rm --privileged \
             -v "$PWD:/work" -w /work alpine:3.24 \
-            sh -lc 'apk add --no-cache bash && bash scripts/build-live-iso.sh'
+            sh -lc 'apk add --no-cache bash && bash scripts/build-all-images.sh x86_64'
+
+      - name: Verify six ISO artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          require_one() {
+            local label=$1 pattern=$2
+            local files=( $pattern )
+            if [ "${#files[@]}" -ne 1 ]; then
+              echo "ERROR: expected exactly one $label image for pattern $pattern, got ${#files[@]}" >&2
+              printf '  %s\n' "${files[@]:-}" >&2
+              exit 1
+            fi
+            test -s "${files[0]}"
+          }
+
+          require_one live       'output/arozos-live-*.iso'
+          require_one installer  'output/arozos-installer-*.iso'
+          require_one rescue     'output/arozos-rescue-*.iso'
+          require_one pxe-boot   'output/arozos-pxe-boot-*.iso'
+          require_one pxe-se     'output/arozos-pxe-se-*.iso'
+          require_one mega       'output/arozos-mega-*.iso'
+
+          test -s output/SHA256SUMS
+          test -s output/IMAGE-SET.txt
+          (cd output && sha256sum -c SHA256SUMS)
+
       - uses: actions/upload-artifact@v4
         with:
-          name: arozos-live-iso
-          path: output/*
+          name: arozos-baremetal-x86_64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            output/arozos-live-*.iso
+            output/arozos-live-*.iso.sha256
+            output/arozos-live-*.iso.manifest
+            output/arozos-installer-*.iso
+            output/arozos-installer-*.iso.sha256
+            output/arozos-installer-*.iso.manifest
+            output/arozos-rescue-*.iso
+            output/arozos-rescue-*.iso.sha256
+            output/arozos-rescue-*.iso.manifest
+            output/arozos-pxe-boot-*.iso
+            output/arozos-pxe-boot-*.iso.sha256
+            output/arozos-pxe-se-*.iso
+            output/arozos-pxe-se-*.iso.sha256
+            output/arozos-pxe-se-*.iso.manifest
+            output/arozos-mega-*.iso
+            output/arozos-mega-*.iso.sha256
+            output/arozos-mega-*.iso.manifest
+            output/SHA256SUMS
+            output/IMAGE-SET.txt
