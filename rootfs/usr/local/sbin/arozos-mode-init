@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+mode=live
+for arg in $(cat /proc/cmdline 2>/dev/null || true); do
+    case "$arg" in
+        aroz.mode=*) mode=${arg#aroz.mode=} ;;
+    esac
+done
+
+case "$mode" in
+    live|debug|installer|rescue|alpine|pxe-se) ;;
+    *)
+        echo "ArozOS: unknown boot mode '$mode', falling back to rescue" >&2
+        mode=rescue
+        ;;
+esac
+
+mkdir -p /run
+printf '%s\n' "$mode" > /run/arozos-mode
+
+case "$mode" in
+    live)
+        echo "ArozOS mode: live"
+        ;;
+    debug)
+        echo "ArozOS mode: debug"
+        ;;
+    installer)
+        echo "ArozOS mode: installer"
+        ;;
+    rescue)
+        echo "ArozOS mode: rescue"
+        ;;
+    alpine)
+        echo "ArozOS mode: Alpine maintenance"
+        ;;
+    pxe-se)
+        echo "ArozOS mode: PXE Server Edition"
+        ;;
+esac
