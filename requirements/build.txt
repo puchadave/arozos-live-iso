@@ -3,6 +3,10 @@ ca-certificates
 git
 go
 make
+build-base
+perl
+zlib-dev
+xz-dev
 tar
 curl
 wget
