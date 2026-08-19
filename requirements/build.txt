@@ -3,6 +3,10 @@ ca-certificates
 git
 go
 make
+build-base
+perl
+zlib-dev
+xz-dev
 tar
 curl
 wget
@@ -10,6 +14,7 @@ squashfs-tools
 xorriso
 mtools
 grub
+grub-bios
 grub-efi
 mkinitfs
 kmod

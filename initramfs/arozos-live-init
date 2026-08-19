@@ -4,43 +4,189 @@ BB=/bin/busybox
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 
+# Alpine's stock initramfs spreads BusyBox applet symlinks before mdev runs.
+# Without this, /lib/mdev/persistent-storage cannot call mkdir/ln/sed/readlink.
+$BB mkdir -p /bin /sbin /usr/bin /usr/sbin /proc /sys /dev /run \
+    /media/iso /lower /cow /newroot /netroot
+$BB --install -s
+
 $BB mount -t proc proc /proc
 $BB mount -t sysfs sysfs /sys
 $BB mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-$BB mkdir -p /run /media/iso /lower /cow /newroot
 $BB mount -t tmpfs tmpfs /run
 
-for mod in loop squashfs overlay iso9660 sr_mod sd_mod ahci virtio_pci virtio_blk virtio_scsi nvme usb_storage xhci_pci; do
+# Storage plus common bare-metal NIC drivers. The mkinitfs network feature also
+# carries the wider Ethernet/PHY module set and modalias probing below loads
+# additional hardware automatically.
+for mod in \
+    loop squashfs overlay isofs sr_mod sd_mod ahci ata_piix nvme usb_storage xhci_pci \
+    r8169 e1000e igb ixgbe tg3 bnx2 bnx2x bnxt_en atlantic alx sky2 niu \
+    virtio_pci virtio_blk virtio_scsi virtio_net vmxnet3; do
     $BB modprobe "$mod" 2>/dev/null || true
 done
+
+# Load matching PCI/virtio drivers by modalias so physical servers are not
+# restricted to the explicit shortlist above.
+for aliasfile in /sys/bus/pci/devices/*/modalias /sys/bus/virtio/devices/*/modalias; do
+    [ -r "$aliasfile" ] || continue
+    modalias=$($BB cat "$aliasfile" 2>/dev/null || true)
+    [ -n "$modalias" ] || continue
+    $BB modprobe "$modalias" 2>/dev/null || true
+done
+
 $BB mdev -s
 
-ISO_DEV=""
-for dev in /dev/sr* /dev/sd* /dev/vd* /dev/nvme*n*p*; do
-    [ -b "$dev" ] || continue
-    if $BB mount -o ro "$dev" /media/iso 2>/dev/null; then
+CMDLINE=$($BB cat /proc/cmdline 2>/dev/null || true)
+WANT_DHCP=0
+ROOT_SOURCE=iso
+ROOT_URL=""
+VOLUME_ID=AROZOSLIVE
+
+for arg in $CMDLINE; do
+    case "$arg" in
+        ip=dhcp) WANT_DHCP=1 ;;
+        aroz.source=*) ROOT_SOURCE=${arg#aroz.source=} ;;
+        aroz.root_url=*) ROOT_URL=${arg#aroz.root_url=} ;;
+        aroz.volume=*) VOLUME_ID=${arg#aroz.volume=} ;;
+    esac
+done
+
+case "$ROOT_SOURCE" in
+    iso|http) ;;
+    *)
+        echo "ArozOS initramfs: unsupported root source '$ROOT_SOURCE'" >&2
+        exec $BB sh
+        ;;
+esac
+
+# Network root always needs network access even if ip=dhcp was omitted.
+[ "$ROOT_SOURCE" = "http" ] && WANT_DHCP=1
+
+if [ "$WANT_DHCP" -eq 1 ]; then
+    echo "ArozOS Live: early DHCP requested"
+    DHCP_OK=0
+    ATTEMPT=0
+    while [ "$DHCP_OK" -eq 0 ] && [ "$ATTEMPT" -lt 6 ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        for netpath in /sys/class/net/*; do
+            [ -e "$netpath" ] || continue
+            iface=${netpath##*/}
+            [ "$iface" = "lo" ] && continue
+            $BB ip link set dev "$iface" up 2>/dev/null || continue
+            echo "ArozOS Live: DHCP on $iface"
+            if $BB udhcpc -i "$iface" -q -n -t 5 >/dev/null 2>&1; then
+                echo "ArozOS Live: network ready on $iface"
+                printf '%s\n' "$iface" > /run/arozos-early-iface
+                DHCP_OK=1
+                break
+            fi
+        done
+        [ "$DHCP_OK" -eq 1 ] || $BB sleep 1
+    done
+    if [ "$DHCP_OK" -eq 0 ]; then
+        echo "ArozOS Live: DHCP requested but no lease was obtained" >&2
+        [ "$ROOT_SOURCE" = "http" ] && exec $BB sh
+    fi
+fi
+
+try_iso_device() {
+    dev="$1"
+    [ -b "$dev" ] || return 1
+    $BB umount /media/iso 2>/dev/null || true
+    if $BB mount -t iso9660 -o ro "$dev" /media/iso 2>/dev/null || \
+       $BB mount -o ro "$dev" /media/iso 2>/dev/null; then
         if [ -f /media/iso/images/rootfs.squashfs ]; then
             ISO_DEV="$dev"
-            break
+            return 0
         fi
         $BB umount /media/iso 2>/dev/null || true
     fi
-done
+    return 1
+}
 
-if [ -z "$ISO_DEV" ]; then
-    echo "ArozOS Live: unable to locate ISO containing images/rootfs.squashfs" >&2
-    exec $BB sh
+ROOT_IMAGE=""
+ISO_DEV=""
+NETROOT_MOUNTED=0
+
+if [ "$ROOT_SOURCE" = "iso" ]; then
+    ATTEMPT=0
+    while [ -z "$ISO_DEV" ] && [ "$ATTEMPT" -lt 6 ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+
+        if [ -n "$VOLUME_ID" ] && [ -e "/dev/disk/by-label/$VOLUME_ID" ]; then
+            try_iso_device "/dev/disk/by-label/$VOLUME_ID" && break
+        fi
+
+        for dev in /dev/sr* /dev/cdrom /dev/sd* /dev/vd* /dev/xvd* /dev/nvme*n*p*; do
+            try_iso_device "$dev" && break
+        done
+
+        [ -n "$ISO_DEV" ] || $BB sleep 1
+    done
+
+    if [ -z "$ISO_DEV" ]; then
+        echo "ArozOS Live: unable to locate ISO containing images/rootfs.squashfs" >&2
+        echo "ArozOS Live: requested volume label: $VOLUME_ID" >&2
+        echo "ArozOS Live: detected block devices:" >&2
+        $BB cat /proc/partitions >&2 2>/dev/null || true
+        exec $BB sh
+    fi
+
+    echo "ArozOS Live: boot medium $ISO_DEV"
+    ROOT_IMAGE=/media/iso/images/rootfs.squashfs
 fi
 
-$BB mount -t squashfs -o loop,ro /media/iso/images/rootfs.squashfs /lower
+if [ "$ROOT_SOURCE" = "http" ]; then
+    if [ -z "$ROOT_URL" ]; then
+        echo "ArozOS netboot: aroz.root_url is required for HTTP root" >&2
+        exec $BB sh
+    fi
+
+    echo "ArozOS netboot: downloading immutable root from $ROOT_URL"
+    # HTTP-RAM is intentionally a separate benchmark mode. It trades RAM for
+    # a simple stateless boot path and is not the local-ISO default.
+    $BB mount -t tmpfs -o mode=0755,size=80% tmpfs /netroot
+    NETROOT_MOUNTED=1
+    if ! $BB wget -O /netroot/rootfs.squashfs "$ROOT_URL"; then
+        echo "ArozOS netboot: root download failed" >&2
+        exec $BB sh
+    fi
+    [ -s /netroot/rootfs.squashfs ] || {
+        echo "ArozOS netboot: downloaded root is empty" >&2
+        exec $BB sh
+    }
+    ROOT_IMAGE=/netroot/rootfs.squashfs
+fi
+
+$BB mount -t squashfs -o loop,ro "$ROOT_IMAGE" /lower
 $BB mount -t tmpfs -o mode=0755 tmpfs /cow
 $BB mkdir -p /cow/upper /cow/work
 $BB mount -t overlay overlay -o lowerdir=/lower,upperdir=/cow/upper,workdir=/cow/work /newroot
 
-$BB mkdir -p /newroot/run/arozos-live/lower /newroot/run/arozos-live/cow /newroot/media/cdrom /newroot/dev /newroot/proc /newroot/sys
+# DHCP state (addresses/routes) survives switch_root in the kernel. Preserve
+# resolver configuration written by Alpine's udhcpc default script as well.
+if [ -f /etc/resolv.conf ]; then
+    $BB mkdir -p /newroot/etc
+    $BB cp /etc/resolv.conf /newroot/etc/resolv.conf 2>/dev/null || true
+fi
+
+$BB mkdir -p \
+    /newroot/run/arozos-live/lower \
+    /newroot/run/arozos-live/cow \
+    /newroot/run/arozos-live/netroot \
+    /newroot/media/cdrom \
+    /newroot/dev /newroot/proc /newroot/sys
+
 $BB mount -o move /lower /newroot/run/arozos-live/lower
 $BB mount -o move /cow /newroot/run/arozos-live/cow
-$BB mount -o move /media/iso /newroot/media/cdrom
+
+if [ -n "$ISO_DEV" ]; then
+    $BB mount -o move /media/iso /newroot/media/cdrom
+fi
+if [ "$NETROOT_MOUNTED" -eq 1 ]; then
+    $BB mount -o move /netroot /newroot/run/arozos-live/netroot
+fi
+
 $BB mount -o move /dev /newroot/dev
 $BB mount -o move /proc /newroot/proc
 $BB mount -o move /sys /newroot/sys

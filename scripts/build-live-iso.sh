@@ -24,6 +24,9 @@ apk update
 apk add --no-cache "${BUILD_PKGS[@]}"
 update-ca-certificates
 
+[ -d /usr/lib/grub/i386-pc ] || { echo "ERROR: GRUB BIOS platform modules missing" >&2; exit 1; }
+[ -d /usr/lib/grub/x86_64-efi ] || { echo "ERROR: GRUB UEFI platform modules missing" >&2; exit 1; }
+
 echo "==> Fetching ArozOS upstream: $AROZOS_REF"
 git clone --depth=1 "$AROZOS_REPO" "$SRC"
 if [ "$AROZOS_REF" != "master" ]; then
@@ -72,10 +75,12 @@ done
 [ -n "$KVER" ]
 cp -L "$ROOTFS/boot/vmlinuz-lts" "$ISOROOT/boot/vmlinuz-lts"
 
-echo "==> Building custom initramfs for ISO SquashFS + overlay"
+echo "==> Building custom initramfs for ISO SquashFS + overlay + early DHCP"
+# network: Ethernet/PHY/VirtIO/VMXNET3 modules
+# dhcp: af_packet + Alpine's /usr/share/udhcpc/default.script
 mkinitfs -b "$ROOTFS" \
     -P "$BASE/initramfs/features.d" \
-    -F "base arozlive" \
+    -F "base network dhcp arozlive" \
     -i "$BASE/initramfs/arozos-live-init" \
     -o "$ISOROOT/boot/initramfs-lts" \
     "$KVER"
@@ -85,18 +90,25 @@ set default=0
 set timeout=5
 
 menuentry "ArozOS Alpine Live" {
-    linux /boot/vmlinuz-lts aroz.mode=live quiet
+    linux /boot/vmlinuz-lts aroz.mode=live ip=dhcp quiet
     initrd /boot/initramfs-lts
 }
 
 menuentry "ArozOS Alpine Live (debug)" {
-    linux /boot/vmlinuz-lts aroz.mode=live
+    linux /boot/vmlinuz-lts aroz.mode=live ip=dhcp
     initrd /boot/initramfs-lts
 }
 GRUB
 
-echo "==> Creating hybrid GRUB ISO"
+echo "==> Creating hybrid GRUB ISO (Legacy BIOS + UEFI)"
 ISO="$OUT/arozos-alpine-live-v${VERSION}-${ARCH}.iso"
 grub-mkrescue -o "$ISO" "$ISOROOT" -- -volid AROZOSLIVE
+
+echo "==> Verifying El Torito BIOS and UEFI boot entries"
+BOOT_REPORT=$(xorriso -indev "$ISO" -report_el_torito plain 2>&1)
+printf '%s\n' "$BOOT_REPORT"
+printf '%s\n' "$BOOT_REPORT" | grep -Eq 'El Torito boot img :.*BIOS' || { echo "ERROR: Legacy BIOS El Torito boot image missing" >&2; exit 1; }
+printf '%s\n' "$BOOT_REPORT" | grep -Eq 'El Torito boot img :.*UEFI' || { echo "ERROR: UEFI El Torito boot image missing" >&2; exit 1; }
+
 sha256sum "$ISO" > "$OUT/SHA256SUMS"
 printf 'Built: %s\n' "$ISO"

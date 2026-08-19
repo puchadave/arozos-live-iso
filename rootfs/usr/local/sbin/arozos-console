@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+mode=$(cat /run/arozos-mode 2>/dev/null || true)
+if [ -z "$mode" ]; then
+    mode=live
+    for arg in $(cat /proc/cmdline 2>/dev/null || true); do
+        case "$arg" in aroz.mode=*) mode=${arg#aroz.mode=} ;; esac
+    done
+fi
+
+case "$mode" in
+    installer|rescue|alpine|debug)
+        clear 2>/dev/null || true
+        echo "ArozOS bare-metal console"
+        echo "Mode: $mode"
+        echo "Exit the shell to restart this console."
+        exec /bin/sh -l
+        ;;
+    *)
+        exec /sbin/getty 38400 tty1
+        ;;
+esac

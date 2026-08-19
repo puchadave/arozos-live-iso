@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+name="ArozOS boot mode"
+description="Record the selected bare-metal boot mode"
+
+command="/usr/local/sbin/arozos-mode-init"
+command_background="no"
+
+ depend() {
+    need localmount
+    before arozos arozos-net arozos-pxe-se
+ }

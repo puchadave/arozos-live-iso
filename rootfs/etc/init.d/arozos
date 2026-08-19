@@ -2,13 +2,42 @@
 name="ArozOS"
 description="ArozOS Cloud / Web Desktop"
 command="/opt/arozos/arozos"
-command_args="${AROZOS_OPTS}"
+command_args="${AROZOS_OPTS:-}"
 command_user="arozos:arozos"
 directory="/opt/arozos"
-command_background="yes"
 pidfile="/run/${RC_SVCNAME}.pid"
 
 depend() {
-    need arozos-net
-    after firewall
+    need arozos-mode
+    after arozos-net firewall
+}
+
+start() {
+    local mode
+    mode=$(cat /run/arozos-mode 2>/dev/null || echo live)
+    case "$mode" in
+        live|debug|pxe-se) ;;
+        *)
+            einfo "ArozOS disabled in boot mode: $mode"
+            return 0
+            ;;
+    esac
+
+    ebegin "Starting ArozOS"
+    # shellcheck disable=SC2086
+    start-stop-daemon --start --background --make-pidfile \
+        --pidfile "$pidfile" \
+        --chdir "$directory" \
+        --chuid "$command_user" \
+        --exec "$command" -- $command_args
+    eend $?
+}
+
+stop() {
+    [ -f "$pidfile" ] || return 0
+    ebegin "Stopping ArozOS"
+    start-stop-daemon --stop --pidfile "$pidfile" --retry TERM/10/KILL/5
+    local rc=$?
+    rm -f "$pidfile"
+    eend "$rc"
 }
