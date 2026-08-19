@@ -4,34 +4,60 @@ BB=/bin/busybox
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 
+# Alpine's stock initramfs spreads BusyBox applet symlinks before mdev runs.
+# Without this, /lib/mdev/persistent-storage cannot call mkdir/ln/sed/readlink.
+$BB mkdir -p /bin /sbin /usr/bin /usr/sbin /proc /sys /dev /run /media/iso /lower /cow /newroot
+$BB --install -s
+
 $BB mount -t proc proc /proc
 $BB mount -t sysfs sysfs /sys
 $BB mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-$BB mkdir -p /run /media/iso /lower /cow /newroot
 $BB mount -t tmpfs tmpfs /run
 
-for mod in loop squashfs overlay iso9660 sr_mod sd_mod ahci virtio_pci virtio_blk virtio_scsi nvme usb_storage xhci_pci; do
+for mod in loop squashfs overlay isofs sr_mod sd_mod ahci ata_piix virtio_pci virtio_blk virtio_scsi nvme usb_storage xhci_pci; do
     $BB modprobe "$mod" 2>/dev/null || true
 done
 $BB mdev -s
 
-ISO_DEV=""
-for dev in /dev/sr* /dev/sd* /dev/vd* /dev/nvme*n*p*; do
-    [ -b "$dev" ] || continue
-    if $BB mount -o ro "$dev" /media/iso 2>/dev/null; then
+try_iso_device() {
+    dev="$1"
+    [ -b "$dev" ] || return 1
+    $BB umount /media/iso 2>/dev/null || true
+    if $BB mount -t iso9660 -o ro "$dev" /media/iso 2>/dev/null || $BB mount -o ro "$dev" /media/iso 2>/dev/null; then
         if [ -f /media/iso/images/rootfs.squashfs ]; then
             ISO_DEV="$dev"
-            break
+            return 0
         fi
         $BB umount /media/iso 2>/dev/null || true
     fi
+    return 1
+}
+
+ISO_DEV=""
+ATTEMPT=0
+while [ -z "$ISO_DEV" ] && [ "$ATTEMPT" -lt 6 ]; do
+    ATTEMPT=$((ATTEMPT + 1))
+
+    # mdev's persistent-storage helper creates this stable label symlink.
+    if [ -e /dev/disk/by-label/AROZOSLIVE ]; then
+        try_iso_device /dev/disk/by-label/AROZOSLIVE && break
+    fi
+
+    for dev in /dev/sr* /dev/cdrom /dev/sd* /dev/vd* /dev/xvd* /dev/nvme*n*p*; do
+        try_iso_device "$dev" && break
+    done
+
+    [ -n "$ISO_DEV" ] || $BB sleep 1
 done
 
 if [ -z "$ISO_DEV" ]; then
     echo "ArozOS Live: unable to locate ISO containing images/rootfs.squashfs" >&2
+    echo "ArozOS Live: detected block devices:" >&2
+    $BB cat /proc/partitions >&2 2>/dev/null || true
     exec $BB sh
 fi
 
+echo "ArozOS Live: boot medium $ISO_DEV"
 $BB mount -t squashfs -o loop,ro /media/iso/images/rootfs.squashfs /lower
 $BB mount -t tmpfs -o mode=0755 tmpfs /cow
 $BB mkdir -p /cow/upper /cow/work
