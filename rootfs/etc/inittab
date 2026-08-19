@@ -1,0 +1,12 @@
+# /etc/inittab for ArozOS bare-metal images
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+
+tty1::respawn:/usr/local/sbin/arozos-console
+tty2::respawn:/sbin/getty 38400 tty2
+tty3::respawn:/sbin/getty 38400 tty3
+tty4::respawn:/sbin/getty 38400 tty4
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown
