@@ -24,6 +24,9 @@ apk update
 apk add --no-cache "${BUILD_PKGS[@]}"
 update-ca-certificates
 
+[ -d /usr/lib/grub/i386-pc ] || { echo "ERROR: GRUB BIOS platform modules missing" >&2; exit 1; }
+[ -d /usr/lib/grub/x86_64-efi ] || { echo "ERROR: GRUB UEFI platform modules missing" >&2; exit 1; }
+
 echo "==> Fetching ArozOS upstream: $AROZOS_REF"
 git clone --depth=1 "$AROZOS_REPO" "$SRC"
 if [ "$AROZOS_REF" != "master" ]; then
@@ -95,8 +98,15 @@ menuentry "ArozOS Alpine Live (debug)" {
 }
 GRUB
 
-echo "==> Creating hybrid GRUB ISO"
+echo "==> Creating hybrid GRUB ISO (Legacy BIOS + UEFI)"
 ISO="$OUT/arozos-alpine-live-v${VERSION}-${ARCH}.iso"
 grub-mkrescue -o "$ISO" "$ISOROOT" -- -volid AROZOSLIVE
+
+echo "==> Verifying El Torito BIOS and UEFI boot entries"
+BOOT_REPORT=$(xorriso -indev "$ISO" -report_el_torito plain 2>&1)
+printf '%s\n' "$BOOT_REPORT"
+printf '%s\n' "$BOOT_REPORT" | grep -Eq 'El Torito boot img :.*BIOS' || { echo "ERROR: Legacy BIOS El Torito boot image missing" >&2; exit 1; }
+printf '%s\n' "$BOOT_REPORT" | grep -Eq 'El Torito boot img :.*UEFI' || { echo "ERROR: UEFI El Torito boot image missing" >&2; exit 1; }
+
 sha256sum "$ISO" > "$OUT/SHA256SUMS"
 printf 'Built: %s\n' "$ISO"
