@@ -1,0 +1,71 @@
+#!/sbin/openrc-run
+name="ArozOS PXE Server Edition"
+description="ProxyDHCP, TFTP and HTTP network boot services"
+
+DNSMASQ_TEMPLATE=/etc/dnsmasq.d/arozos-pxe-se.conf
+DNSMASQ_RUNTIME=/run/arozos-pxe-se/dnsmasq.conf
+DNSMASQ_PID=/run/arozos-pxe-se/dnsmasq.pid
+PXE_ROOT=/var/lib/arozos-pxe-se
+
+depend() {
+    need arozos-mode arozos-net
+    after firewall
+}
+
+start() {
+    local mode iface server_ip route proxy_net
+    mode=$(cat /run/arozos-mode 2>/dev/null || echo live)
+    if [ "$mode" != "pxe-se" ]; then
+        einfo "PXE-SE disabled in boot mode: $mode"
+        return 0
+    fi
+
+    iface=$(cat /run/arozos-live-iface 2>/dev/null || true)
+    if [ -z "$iface" ]; then
+        iface=$(ip -o -4 addr show scope global 2>/dev/null | awk 'NR==1 {print $2}')
+    fi
+    if [ -z "$iface" ]; then
+        eerror "PXE-SE requires an IPv4 interface"
+        return 1
+    fi
+
+    server_ip=$(ip -o -4 addr show dev "$iface" scope global 2>/dev/null \
+        | awk 'NR==1 {split($4,a,"/"); print a[1]}')
+    route=$(ip -4 route show dev "$iface" scope link 2>/dev/null | awk 'NR==1 {print $1}')
+    proxy_net=${route%%/*}
+
+    if [ -z "$server_ip" ] || [ -z "$proxy_net" ] || [ "$proxy_net" = "default" ]; then
+        eerror "PXE-SE could not derive server address/subnet for $iface"
+        return 1
+    fi
+
+    mkdir -p /run/arozos-pxe-se "$PXE_ROOT/tftp" "$PXE_ROOT/http" "$PXE_ROOT/http/menus"
+    cp "$PXE_ROOT/boot.ipxe" "$PXE_ROOT/http/boot.ipxe"
+
+    sed \
+        -e "s/@PROXY_NET@/$proxy_net/g" \
+        -e "s/@SERVER_IP@/$server_ip/g" \
+        "$DNSMASQ_TEMPLATE" > "$DNSMASQ_RUNTIME"
+
+    ebegin "Validating PXE-SE HTTP service"
+    nginx -t
+    eend $?
+
+    ebegin "Starting PXE-SE HTTP service on $server_ip:8081"
+    nginx
+    eend $?
+
+    ebegin "Starting PXE-SE ProxyDHCP/TFTP on $iface ($proxy_net)"
+    dnsmasq --conf-file="$DNSMASQ_RUNTIME" --pid-file="$DNSMASQ_PID"
+    eend $?
+
+    einfo "PXE-SE menu: http://$server_ip:8081/boot.ipxe"
+}
+
+stop() {
+    if [ -f "$DNSMASQ_PID" ]; then
+        kill "$(cat "$DNSMASQ_PID")" 2>/dev/null || true
+        rm -f "$DNSMASQ_PID"
+    fi
+    nginx -s quit 2>/dev/null || true
+}
