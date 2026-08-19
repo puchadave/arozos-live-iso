@@ -1,0 +1,16 @@
+#!ipxe
+
+echo ArozOS network bootstrap
+isset ${net0/ip} || dhcp || goto shell
+
+isset ${next-server} && set boot-server ${next-server} || set boot-server pxe-se
+set boot-url http://${boot-server}:8081/boot.ipxe
+
+echo Trying ${boot-url}
+chain ${boot-url} || goto shell
+
+:shell
+echo Automatic PXE-SE discovery did not complete.
+echo Use the iPXE shell to set a server manually, for example:
+echo   chain http://192.0.2.10:8081/boot.ipxe
+shell
