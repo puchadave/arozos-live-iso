@@ -74,4 +74,7 @@ pxe_root_mode=http-ram
 EOF
 
 printf 'Built complete image set:\n'
-find "$OUT" -maxdepth 1 -type f -name '*.iso' -printf '  %f\n' | sort
+for iso in "$OUT"/*.iso; do
+    [ -f "$iso" ] || continue
+    printf '  %s\n' "$(basename "$iso")"
+done | sort
