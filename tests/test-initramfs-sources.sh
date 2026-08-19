@@ -7,8 +7,8 @@ INIT=initramfs/arozos-live-init
 grep -q 'aroz.source=' "$INIT"
 grep -q 'aroz.root_url=' "$INIT"
 grep -q 'aroz.volume=' "$INIT"
-grep -q 'source=http' "$INIT"
-grep -q 'source=iso' "$INIT"
+grep -q 'ROOT_SOURCE=iso' "$INIT"
+grep -q 'ROOT_SOURCE.*http\|"http"' "$INIT"
 grep -q 'wget' "$INIT"
 grep -q 'rootfs.squashfs' "$INIT"
 
