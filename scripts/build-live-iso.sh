@@ -75,10 +75,12 @@ done
 [ -n "$KVER" ]
 cp -L "$ROOTFS/boot/vmlinuz-lts" "$ISOROOT/boot/vmlinuz-lts"
 
-echo "==> Building custom initramfs for ISO SquashFS + overlay"
+echo "==> Building custom initramfs for ISO SquashFS + overlay + early DHCP"
+# network: Ethernet/PHY/VirtIO/VMXNET3 modules
+# dhcp: af_packet + Alpine's /usr/share/udhcpc/default.script
 mkinitfs -b "$ROOTFS" \
     -P "$BASE/initramfs/features.d" \
-    -F "base arozlive" \
+    -F "base network dhcp arozlive" \
     -i "$BASE/initramfs/arozos-live-init" \
     -o "$ISOROOT/boot/initramfs-lts" \
     "$KVER"
@@ -88,12 +90,12 @@ set default=0
 set timeout=5
 
 menuentry "ArozOS Alpine Live" {
-    linux /boot/vmlinuz-lts aroz.mode=live quiet
+    linux /boot/vmlinuz-lts aroz.mode=live ip=dhcp quiet
     initrd /boot/initramfs-lts
 }
 
 menuentry "ArozOS Alpine Live (debug)" {
-    linux /boot/vmlinuz-lts aroz.mode=live
+    linux /boot/vmlinuz-lts aroz.mode=live ip=dhcp
     initrd /boot/initramfs-lts
 }
 GRUB
