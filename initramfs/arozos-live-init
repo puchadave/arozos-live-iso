@@ -14,10 +14,54 @@ $BB mount -t sysfs sysfs /sys
 $BB mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 $BB mount -t tmpfs tmpfs /run
 
-for mod in loop squashfs overlay isofs sr_mod sd_mod ahci ata_piix virtio_pci virtio_blk virtio_scsi nvme usb_storage xhci_pci; do
+# Storage plus the most common virtual/physical NICs. The mkinitfs network
+# feature also carries the full Ethernet/PHY module set, so PCI modalias
+# probing below can load additional hardware automatically.
+for mod in loop squashfs overlay isofs sr_mod sd_mod ahci ata_piix virtio_pci virtio_blk virtio_scsi nvme usb_storage xhci_pci virtio_net e1000 e1000e vmxnet3 r8169; do
     $BB modprobe "$mod" 2>/dev/null || true
 done
+
+# Load matching PCI/virtio drivers by modalias so physical servers are not
+# restricted to the explicit virtualization-driver shortlist above.
+for aliasfile in /sys/bus/pci/devices/*/modalias /sys/bus/virtio/devices/*/modalias; do
+    [ -r "$aliasfile" ] || continue
+    modalias=$($BB cat "$aliasfile" 2>/dev/null || true)
+    [ -n "$modalias" ] || continue
+    $BB modprobe "$modalias" 2>/dev/null || true
+done
+
 $BB mdev -s
+
+CMDLINE=$($BB cat /proc/cmdline 2>/dev/null || true)
+WANT_DHCP=0
+case " $CMDLINE " in
+    *" ip=dhcp "*) WANT_DHCP=1 ;;
+esac
+
+if [ "$WANT_DHCP" -eq 1 ]; then
+    echo "ArozOS Live: early DHCP requested"
+    DHCP_OK=0
+    ATTEMPT=0
+    while [ "$DHCP_OK" -eq 0 ] && [ "$ATTEMPT" -lt 6 ]; do
+        ATTEMPT=$((ATTEMPT + 1))
+        for netpath in /sys/class/net/*; do
+            [ -e "$netpath" ] || continue
+            iface=${netpath##*/}
+            [ "$iface" = "lo" ] && continue
+            $BB ip link set dev "$iface" up 2>/dev/null || continue
+            echo "ArozOS Live: DHCP on $iface"
+            if $BB udhcpc -i "$iface" -q -n -t 5 >/dev/null 2>&1; then
+                echo "ArozOS Live: network ready on $iface"
+                DHCP_OK=1
+                break
+            fi
+        done
+        [ "$DHCP_OK" -eq 1 ] || $BB sleep 1
+    done
+    if [ "$DHCP_OK" -eq 0 ]; then
+        echo "ArozOS Live: DHCP requested but no lease was obtained" >&2
+    fi
+fi
 
 try_iso_device() {
     dev="$1"
@@ -62,6 +106,13 @@ $BB mount -t squashfs -o loop,ro /media/iso/images/rootfs.squashfs /lower
 $BB mount -t tmpfs -o mode=0755 tmpfs /cow
 $BB mkdir -p /cow/upper /cow/work
 $BB mount -t overlay overlay -o lowerdir=/lower,upperdir=/cow/upper,workdir=/cow/work /newroot
+
+# DHCP state (addresses/routes) survives switch_root in the kernel. Preserve
+# resolver configuration written by Alpine's udhcpc default script as well.
+if [ -f /etc/resolv.conf ]; then
+    $BB mkdir -p /newroot/etc
+    $BB cp /etc/resolv.conf /newroot/etc/resolv.conf 2>/dev/null || true
+fi
 
 $BB mkdir -p /newroot/run/arozos-live/lower /newroot/run/arozos-live/cow /newroot/media/cdrom /newroot/dev /newroot/proc /newroot/sys
 $BB mount -o move /lower /newroot/run/arozos-live/lower
